@@ -1,5 +1,5 @@
 import sys
-import random
+import random #Random sampling
 
 if len(sys.argv) != 2:
     sys.exit("Usage: python3 samplit-baijunzhang.py filename")
