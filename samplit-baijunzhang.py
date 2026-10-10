@@ -1,3 +1,4 @@
+import sys
 import random  # Select each line with 1% probability
 
 if len(sys.argv) != 2:
