@@ -1,5 +1,5 @@
 import sys
-import random
+import random # Select each line with 1% probability
 
 if len(sys.argv) != 2:
     sys.exit("Usage: python3 samplit-baijunzhang.py filename")
