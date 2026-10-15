@@ -1,0 +1,5 @@
+
+# Local database and Python cache
+/attendancechimp/db.sqlite3
+__pycache__/
+*.pyc
