@@ -15,11 +15,15 @@ from datetime import datetime
 import zoneinfo
 import json
 import io
+from django.utils import timezone
+import uuid
 
 # from .models import (InstructorProfile, StudentProfile, Course, Enrollment,
 #                      Lecture, QRCodeUpload, is_instructor, is_student,
 #                      getUploadsForCourse)
-from .models import StudentProfile, InstructorProfile
+from .models import (
+    StudentProfile, InstructorProfile, Course, Lecture, QRCodeUpload
+)
 CDT = zoneinfo.ZoneInfo("America/Chicago")
 
 
@@ -93,8 +97,169 @@ def createUser(request):
 # ---------------------------------------------------------------------------
 # HW5  — courses, lectures, QR uploads, dump
 # ---------------------------------------------------------------------------
+def new_course(request):
+    if not request.user.is_authenticated:
+        return HttpResponse("Unauthorized", status=401)
+
+    if not InstructorProfile.objects.filter(user=request.user).exists():
+        return HttpResponse("Unauthorized", status=401)
+
+    if request.method != "GET":
+        return HttpResponse("Method not allowed", status=405)
+
+    return render(request, "app/new_course.html")
+
+@csrf_exempt
+def createCourse(request):
+    # Only logged-in instructors can create courses.
+    if not request.user.is_authenticated:
+        return HttpResponse("Unauthorized", status=401)
+
+    instructor = InstructorProfile.objects.filter(
+        user=request.user
+    ).first()
+
+    if instructor is None:
+        return HttpResponse("Unauthorized", status=401)
+
+    if request.method != "POST":
+        return HttpResponse("Method not allowed", status=405)
+
+    course_name = request.POST.get("course-name", "").strip()
+    start_time = request.POST.get("start-time", "").strip()
+    end_time = request.POST.get("end-time", "").strip()
+
+    days = [
+        day
+        for day in ("mon", "tue", "wed", "thu", "fri")
+        if f"day-{day}" in request.POST
+    ]
+
+    if not course_name or not start_time or not end_time or not days:
+        return HttpResponse("Missing information", status=400)
+
+    if len(course_name) > 200:
+        return HttpResponse("Course name is too long", status=400)
+
+    if Course.objects.filter(name=course_name).exists():
+        return HttpResponse("Course already exists", status=400)
+
+    meeting_schedule = f"{', '.join(days)} {start_time}-{end_time}"
+
+    if len(meeting_schedule) > 200:
+        return HttpResponse("Schedule is too long", status=400)
+
+    Course.objects.create(
+        name=course_name,
+        instructor=instructor,
+        meeting_schedule=meeting_schedule,
+    )
+
+    return HttpResponse("Course created successfully", status=200)
+
+def new_lecture(request):
+    if not request.user.is_authenticated:
+        return HttpResponse("Unauthorized", status=401)
+
+    if not InstructorProfile.objects.filter(user=request.user).exists():
+        return HttpResponse("Unauthorized", status=401)
+
+    if request.method != "GET":
+        return HttpResponse("Method not allowed", status=405)
+
+    courses = Course.objects.all()
+    return render(request, "app/new_lecture.html", {"courses": courses})
 
 
+@csrf_exempt
+def createLecture(request):
+    if not request.user.is_authenticated:
+        return HttpResponse("Unauthorized", status=401)
+
+    if not InstructorProfile.objects.filter(user=request.user).exists():
+        return HttpResponse("Unauthorized", status=401)
+
+    if request.method != "POST":
+        return HttpResponse("Method not allowed", status=405)
+
+    course_name = request.POST.get("choice", "").strip()
+    if not course_name:
+        return HttpResponse("Missing course name", status=400)
+
+    try:
+        course = Course.objects.get(name=course_name)
+    except Course.DoesNotExist:
+        return HttpResponse("Course not found", status=400)
+    except Course.MultipleObjectsReturned:
+        return HttpResponse("Course name is not unique", status=400)
+
+    Lecture.objects.create(
+        course=course,
+        date=timezone.now(),
+        qr_identifier=uuid.uuid4().hex,
+    )
+
+    return HttpResponse("Lecture created successfully", status=200)
+
+def new_qr_upload(request):
+    if not request.user.is_authenticated:
+        return HttpResponse("Unauthorized", status=401)
+
+    if not StudentProfile.objects.filter(user=request.user).exists():
+        return HttpResponse("Unauthorized", status=401)
+
+    if request.method != "GET":
+        return HttpResponse("Method not allowed", status=405)
+
+    return render(request, "app/new_qr_upload.html")
+
+
+@csrf_exempt
+def createQRCodeUpload(request):
+    if not request.user.is_authenticated:
+        return HttpResponse("Unauthorized", status=401)
+
+    student = StudentProfile.objects.filter(user=request.user).first()
+    if student is None:
+        return HttpResponse("Unauthorized", status=401)
+
+    if request.method != "POST":
+        return HttpResponse("Method not allowed", status=405)
+
+    image = request.FILES.get("imageUpload")
+    if image is None:
+        return HttpResponse("Missing image", status=400)
+
+    QRCodeUpload.objects.create(
+        student=student,
+        image=image,
+    )
+
+    return HttpResponse("QR code uploaded successfully", status=200)
+
+def dumpUploads(request):
+    if not request.user.is_authenticated:
+        return HttpResponse("Unauthorized", status=401)
+
+    if not InstructorProfile.objects.filter(user=request.user).exists():
+        return HttpResponse("Unauthorized", status=401)
+
+    if request.method != "GET":
+        return HttpResponse("Method not allowed", status=405)
+
+    uploads = QRCodeUpload.objects.select_related(
+        "student__user"
+    ).order_by("id")
+
+    data = [
+        {
+            "username": upload.student.user.username,
+            "upload_time": upload.uploaded_at.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        for upload in uploads
+    ]
+
+    return JsonResponse(data, safe=False)
 
 # ---------------------------------------------------------------------------
 # HW6  — getUploads
