@@ -15,6 +15,8 @@ Entities
 - Lecture         : a single class meeting (has a QR-code identifier)
 - QRCodeUpload    : a student's uploaded QR-code photograph
 """
+from zoneinfo import ZoneInfo
+from django.utils import timezone
 
 from django.db import models
 from django.contrib.auth.models import User
@@ -45,6 +47,7 @@ class StudentProfile(models.Model):
 
 # ---------------------------------------------------------------------------
 # Course
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri")
 
 class Course(models.Model):
     """
@@ -54,7 +57,21 @@ class Course(models.Model):
     name = models.CharField(max_length=200)
     instructor = models.ForeignKey(InstructorProfile, on_delete=models.CASCADE)
     meeting_schedule = models.CharField(max_length=200)
-# ---------------------------------------------------------------------------
+    course = models.CharField(max_length=200, unique=True)
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+
+    mon = models.BooleanField(default=False)
+    tue = models.BooleanField(default=False)
+    wed = models.BooleanField(default=False)
+    thu = models.BooleanField(default=False)
+    fri = models.BooleanField(default=False)
+
+    def meets_on_day(self, weekday):
+        if 0 <= weekday < len(WEEKDAYS):
+            return getattr(self, WEEKDAYS[weekday])
+        return False
+# ----------------------------------------------------------------
 
 
 
@@ -99,7 +116,29 @@ class QRCodeUpload(models.Model):
     lecture = models.ForeignKey(Lecture, on_delete=models.SET_NULL, null=True, blank=True)
     image = models.ImageField(upload_to="qr_uploads/")
     uploaded_at = models.DateTimeField(auto_now_add=True)
-# ---------------------------------------------------------------------------
+    
+def getUploadsForCourse(course):
+    scheduled_course = Course.objects.filter(course=course).first()
+    if scheduled_course is None:
+        return []
+
+    start_time = scheduled_course.start_time
+    end_time = scheduled_course.end_time
+    if start_time is None or end_time is None:
+        return []
+
+    uploads = QRCodeUpload.objects.filter(lecture__course=scheduled_course)
+    chicago = ZoneInfo("America/Chicago")
+    valid_uploads = []
+
+    for upload in uploads:
+        local_time = timezone.localtime(upload.uploaded_at, chicago)
+        if scheduled_course.meets_on_day(local_time.weekday()):
+            if start_time <= local_time.time() <= end_time:
+                valid_uploads.append(upload)
+
+    return valid_uploads
+# ----------------------------------------------------------------
 
 
 

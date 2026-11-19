@@ -4,6 +4,7 @@ views.py — HTTP request handlers for AttendanceChimp.
 Each view corresponds to one URL endpoint.  Views receive an HTTP request,
 interact with the database via models.py, and return an HTTP response.
 """
+from django.utils.dateparse import parse_time
 
 from django.shortcuts import render, redirect
 from django.http import (HttpResponse, HttpResponseForbidden,
@@ -22,7 +23,8 @@ import uuid
 #                      Lecture, QRCodeUpload, is_instructor, is_student,
 #                      getUploadsForCourse)
 from .models import (
-    StudentProfile, InstructorProfile, Course, Lecture, QRCodeUpload
+    StudentProfile, InstructorProfile, Course, Lecture, QRCodeUpload,
+    WEEKDAYS, getUploadsForCourse,
 )
 CDT = zoneinfo.ZoneInfo("America/Chicago")
 
@@ -264,6 +266,28 @@ def dumpUploads(request):
 # ---------------------------------------------------------------------------
 # HW6  — getUploads
 # ---------------------------------------------------------------------------
+def getUploads(request):
+    if not request.user.is_authenticated:
+        return HttpResponse("Unauthorized", status=401)
 
+    if not InstructorProfile.objects.filter(user=request.user).exists():
+        return HttpResponse("Unauthorized", status=401)
+
+    if request.method != "GET":
+        return HttpResponse("Method not allowed", status=405)
+
+    course = request.GET.get("course", "").strip()
+    if not course:
+        return JsonResponse({"error": "Missing course parameter"}, status=400)
+
+    uploads = getUploadsForCourse(course)
+    data = [
+        {
+            "username": upload.student.user.username,
+            "upload_time": upload.uploaded_at.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        for upload in uploads
+    ]
+    return JsonResponse(data, safe=False)
 
 
